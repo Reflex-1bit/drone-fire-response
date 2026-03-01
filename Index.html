@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drone Fire Response Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #0f0f0f; color: #eee; margin: 0; padding: 20px; }
+        h1 { color: #ff4500; }
+        #map { width: 600px; height: 600px; background: #1a1a1a; border: 2px solid #333; position: relative; margin: 20px 0; cursor: crosshair; }
+        .drone { width: 12px; height: 12px; border-radius: 50%; position: absolute; transform: translate(-50%, -50%); transition: all 0.5s; }
+        .drone.idle { background: #00ff88; }
+        .drone.en_route { background: #ffaa00; }
+        .drone.suppressing { background: #ff4500; }
+        .drone.returning { background: #00aaff; }
+        .fire-marker { width: 16px; height: 16px; background: #ff0000; position: absolute; transform: translate(-50%, -50%); clip-path: polygon(50% 0%, 0% 100%, 100% 100%); }
+        #status { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+        .drone-card { background: #1e1e1e; border: 1px solid #333; padding: 10px; border-radius: 6px; min-width: 160px; font-size: 13px; }
+        .drone-card h3 { margin: 0 0 6px; color: #ff4500; }
+        .label { color: #888; }
+        button { background: #ff4500; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 4px; }
+        button:hover { background: #ff6620; }
+    </style>
+</head>
+<body>
+    <h1>🔥 Drone Fire Response System</h1>
+    <p>Click on the map to dispatch nearest drone to a fire location.</p>
+    <button onclick="dispatchSwarm()">Dispatch Swarm to Last Fire</button>
+
+    <div id="map"></div>
+    <div id="status"></div>
+
+    <script>
+        let lastFire = null;
+
+        const map = document.getElementById('map');
+        const mapSize = 600;
+        const gridSize = 100;
+
+        map.addEventListener('click', (e) => {
+            const rect = map.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+            const gx = Math.round((px / mapSize) * gridSize);
+            const gy = Math.round((py / mapSize) * gridSize);
+            lastFire = { x: gx, y: gy };
+
+            fetch(`/api/dispatch/${gx}/${gy}`, { method: 'POST' })
+                .then(r => r.json())
+                .then(d => console.log('Dispatched:', d));
+
+            // Add fire marker
+            const marker = document.createElement('div');
+            marker.className = 'fire-marker';
+            marker.style.left = `${px}px`;
+            marker.style.top = `${py}px`;
+            map.appendChild(marker);
+            setTimeout(() => marker.remove(), 5000);
+        });
+
+        function dispatchSwarm() {
+            if (!lastFire) return alert('Click on map first to set fire location');
+            fetch(`/api/swarm/${lastFire.x}/${lastFire.y}`, { method: 'POST' });
+        }
+
+        function updateStatus() {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    map.querySelectorAll('.drone').forEach(e => e.remove());
+                    data.drones.forEach(drone => {
+                        const el = document.createElement('div');
+                        el.className = `drone ${drone.status}`;
+                        el.style.left = `${(drone.x / gridSize) * mapSize}px`;
+                        el.style.top = `${(drone.y / gridSize) * mapSize}px`;
+                        el.title = `Drone ${drone.id} - ${drone.status}`;
+                        map.appendChild(el);
+                    });
+
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.innerHTML = data.drones.map(d => `
+                        <div class="drone-card">
+                            <h3>Drone ${d.id}</h3>
+                            <div><span class="label">Status:</span> ${d.status}</div>
+                            <div><span class="label">Battery:</span> ${d.battery}%</div>
+                            <div><span class="label">Payload:</span> ${d.payload}%</div>
+                            <div><span class="label">Pos:</span> (${d.x}, ${d.y})</div>
+                        </div>
+                    `).join('');
+                });
+        }
+
+        setInterval(updateStatus, 500);
+        updateStatus();
+    </script>
+</body>
+</html>
